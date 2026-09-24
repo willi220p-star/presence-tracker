@@ -5,6 +5,20 @@ import { createClient } from "@/lib/supabase/client";
 
 export type PunchCard = Punch & { photoUrl: string | null };
 
+const ownPunchLoads = new Map<string, Promise<PunchCard[]>>();
+
+export function forgetOwnPunches() {
+  ownPunchLoads.clear();
+}
+
+export function ownPunches(userId: string) {
+  const existing = ownPunchLoads.get(userId);
+  if (existing) return existing;
+  const pending = loadOwnPunches(userId);
+  ownPunchLoads.set(userId, pending);
+  return pending;
+}
+
 export async function loadOwnPunches(userId: string): Promise<PunchCard[]> {
   const supabase = createClient();
   const { data, error } = await supabase

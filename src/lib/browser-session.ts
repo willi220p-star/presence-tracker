@@ -1,6 +1,7 @@
 "use client";
 
 import type { Profile } from "@/lib/daymark";
+import { forgetOwnPunches } from "@/lib/punches";
 import { createClient } from "@/lib/supabase/client";
 
 let generation = 0;
@@ -9,11 +10,13 @@ const profiles = new Map<number, Promise<Profile | null>>();
 export function clearSessionCache() {
   generation += 1;
   profiles.clear();
+  forgetOwnPunches();
 }
 
 export function rememberProfile(profile: Profile) {
   generation += 1;
   profiles.clear();
+  forgetOwnPunches();
   profiles.set(generation, Promise.resolve(profile));
 }
 
