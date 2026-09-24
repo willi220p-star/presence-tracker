@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { clearSessionCache } from "@/lib/browser-session";
 import { createClient } from "@/lib/supabase/client";
 
 export function SignOutButton({ children }: { children: ReactNode }) {
@@ -18,6 +19,7 @@ export function SignOutButton({ children }: { children: ReactNode }) {
       onClick={async () => {
         setPending(true);
         const supabase = createClient();
+        clearSessionCache();
         await supabase.auth.signOut();
         router.push("/login");
         router.refresh();

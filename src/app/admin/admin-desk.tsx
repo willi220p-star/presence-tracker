@@ -217,7 +217,7 @@ export function AdminDesk({ profile }: { profile: Profile }) {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form method="post" action="/admin" onSubmit={createPerson} className="flex flex-col gap-4">
+            <form method="post" action="." onSubmit={createPerson} className="flex flex-col gap-4">
               <Field label="Name" id="display-name">
                 <Input
                   id="display-name"
@@ -285,7 +285,7 @@ export function AdminDesk({ profile }: { profile: Profile }) {
             <CardDescription>Replace the starter password before anyone else uses this desk.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form method="post" action="/admin" onSubmit={changePassword} className="flex flex-col gap-3">
+            <form method="post" action="." onSubmit={changePassword} className="flex flex-col gap-3">
               <Label htmlFor="admin-password">New password</Label>
               <Input
                 id="admin-password"

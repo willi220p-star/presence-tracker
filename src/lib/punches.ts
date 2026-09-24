@@ -1,10 +1,12 @@
+"use client";
+
 import type { Punch } from "@/lib/daymark";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/client";
 
 export type PunchCard = Punch & { photoUrl: string | null };
 
 export async function loadOwnPunches(userId: string): Promise<PunchCard[]> {
-  const supabase = await createClient();
+  const supabase = createClient();
   const { data, error } = await supabase
     .from("daymark_punches")
     .select("id, user_id, event_type, occurred_at, latitude, longitude, accuracy_m, photo_path")

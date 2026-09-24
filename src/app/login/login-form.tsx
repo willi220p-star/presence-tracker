@@ -6,6 +6,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { clearSessionCache } from "@/lib/browser-session";
 import { emailForLogin, errorText } from "@/lib/daymark";
 import { createClient } from "@/lib/supabase/client";
 
@@ -57,6 +58,7 @@ export function LoginForm() {
         return;
       }
 
+      clearSessionCache();
       router.push(profile.role === "admin" ? "/admin" : "/clock");
       router.refresh();
     } catch (caught) {
@@ -67,7 +69,7 @@ export function LoginForm() {
   }
 
   return (
-    <form method="post" action="/login" onSubmit={onSubmit} className="flex flex-col gap-5">
+    <form method="post" action="." onSubmit={onSubmit} className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
         <Label htmlFor="login-id">Login ID</Label>
         <Input

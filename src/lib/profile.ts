@@ -21,7 +21,7 @@ export async function getProfile(): Promise<Profile | null> {
 
 export async function requireRole(role: Role) {
   const profile = await getProfile();
-  if (!profile) redirect("/auth/sign-out");
+  if (!profile) redirect("/login");
   if (profile.role !== role) {
     redirect(profile.role === "admin" ? "/admin" : "/clock");
   }

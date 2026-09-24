@@ -1,10 +1,10 @@
-import { redirect } from "next/navigation";
-import { getProfile } from "@/lib/profile";
+import { Suspense } from "react";
+import { HomeGate, Opening } from "@/components/desk-gate";
 
-export const dynamic = "force-dynamic";
-
-export default async function HomePage() {
-  const profile = await getProfile();
-  if (!profile) redirect("/auth/sign-out");
-  redirect(profile.role === "admin" ? "/admin" : "/clock");
+export default function HomePage() {
+  return (
+    <Suspense fallback={<Opening label="Opening your desk…" />}>
+      <HomeGate />
+    </Suspense>
+  );
 }

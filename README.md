@@ -12,6 +12,8 @@ npm run dev
 
 Open [http://127.0.0.1:41731](http://127.0.0.1:41731).
 
+The public site is [https://willi220p-star.github.io/presence-tracker/](https://willi220p-star.github.io/presence-tracker/). Pushes to `main` publish it with GitHub Pages.
+
 Starter admin:
 
 - Login ID: `admin`

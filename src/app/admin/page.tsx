@@ -1,23 +1,16 @@
 import type { Metadata } from "next";
-import { AdminDesk } from "@/app/admin/admin-desk";
-import { AppHeader } from "@/components/app-header";
-import { requireRole } from "@/lib/profile";
-
-export const dynamic = "force-dynamic";
+import { Suspense } from "react";
+import { AdminScreen } from "@/app/admin/admin-screen";
+import { Opening } from "@/components/desk-gate";
 
 export const metadata: Metadata = {
   title: "Admin",
 };
 
-export default async function AdminPage() {
-  const profile = await requireRole("admin");
-
+export default function AdminPage() {
   return (
-    <>
-      <AppHeader profile={profile} eyebrow="Admin desk" />
-      <main>
-        <AdminDesk profile={profile} />
-      </main>
-    </>
+    <Suspense fallback={<Opening label="Opening the admin desk…" />}>
+      <AdminScreen />
+    </Suspense>
   );
 }
