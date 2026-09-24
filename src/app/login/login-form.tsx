@@ -6,7 +6,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { clearSessionCache } from "@/lib/browser-session";
+import { rememberProfile } from "@/lib/browser-session";
 import { emailForLogin, errorText } from "@/lib/daymark";
 import { createClient } from "@/lib/supabase/client";
 
@@ -42,11 +42,11 @@ export function LoginForm() {
 
       const { data: profile } = await supabase
         .from("daymark_profiles")
-        .select("role, active")
+        .select("id, login_id, display_name, role, active, created_at")
         .eq("id", data.user.id)
         .maybeSingle();
 
-      if (!profile) {
+      if (!profile || (profile.role !== "admin" && profile.role !== "staff")) {
         await supabase.auth.signOut();
         setError("This login is not set up in Daymark.");
         return;
@@ -58,9 +58,8 @@ export function LoginForm() {
         return;
       }
 
-      clearSessionCache();
+      rememberProfile(profile);
       router.push(profile.role === "admin" ? "/admin" : "/clock");
-      router.refresh();
     } catch (caught) {
       setError(errorText(caught, "Could not sign in. Try again."));
     } finally {

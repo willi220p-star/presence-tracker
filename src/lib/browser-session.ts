@@ -11,6 +11,12 @@ export function clearSessionCache() {
   profiles.clear();
 }
 
+export function rememberProfile(profile: Profile) {
+  generation += 1;
+  profiles.clear();
+  profiles.set(generation, Promise.resolve(profile));
+}
+
 export function sessionProfile() {
   const current = generation;
   const existing = profiles.get(current);
@@ -22,13 +28,14 @@ export function sessionProfile() {
 
 async function fetchProfile(): Promise<Profile | null> {
   const supabase = createClient();
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) return null;
+  const { data, error } = await supabase.auth.getClaims();
+  const userId = data?.claims?.sub;
+  if (error || !userId) return null;
 
   const { data: profile } = await supabase
     .from("daymark_profiles")
     .select("id, login_id, display_name, role, active, created_at")
-    .eq("id", data.user.id)
+    .eq("id", userId)
     .maybeSingle();
 
   if (!profile) return null;

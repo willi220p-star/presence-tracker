@@ -141,18 +141,16 @@ export function AdminDesk({ profile }: { profile: Profile }) {
     setCreated(null);
     try {
       const supabase = createClient();
-      const { data, error } = await supabase.functions.invoke("create-staff", {
-        body: {
-          display_name: name.trim(),
-          login_id: loginId.trim().toLowerCase(),
-          password,
-        },
+      const { data, error } = await supabase.rpc("create_staff_login", {
+        display_name: name.trim(),
+        login_id: loginId.trim().toLowerCase(),
+        password,
       });
 
-      if (error) throw new Error(await functionError(error));
-      if (data?.error) throw new Error(data.error);
+      if (error) throw new Error(error.message);
+      if (!data || typeof data !== "object") throw new Error("Could not create that login.");
 
-      const person = data.profile as Person;
+      const person = data as Person;
       setPeople((current) => [...current, { ...person, created_at: new Date().toISOString() }].sort(byName));
       setCreated({
         displayName: person.display_name,
@@ -464,16 +462,6 @@ function Field({
 
 function byName(a: Person, b: Person) {
   return a.display_name.localeCompare(b.display_name);
-}
-
-async function functionError(error: { message: string; context?: Response }) {
-  try {
-    const payload = await error.context?.json();
-    if (payload && typeof payload.error === "string") return payload.error;
-  } catch {
-    return error.message;
-  }
-  return error.message;
 }
 
 async function signedPhotoUrls(supabase: ReturnType<typeof createClient>, paths: string[]) {

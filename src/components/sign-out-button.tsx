@@ -22,7 +22,6 @@ export function SignOutButton({ children }: { children: ReactNode }) {
         clearSessionCache();
         await supabase.auth.signOut();
         router.push("/login");
-        router.refresh();
       }}
     >
       {children}

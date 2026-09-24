@@ -33,4 +33,4 @@ The browser client lives in `src/lib/supabase/client.ts`. Server components use 
 
 Daymark tables are in the personal Supabase project. A new project could not be created because the free plan already has two projects. The campaign project was left alone.
 
-Schema, row-level security, and the private photo bucket are in `supabase/migrations/20260924040000_daymark.sql`. Admins create staff through the `create-staff` edge function, which keeps the service role off the browser.
+Schema, row-level security, and the private photo bucket are in `supabase/migrations/20260924040000_daymark.sql`. Admins create staff with the `create_staff_login` database function, so the service role stays off the browser.
