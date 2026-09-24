@@ -26,7 +26,8 @@ export type Punch = {
 };
 
 export const WORK_SITE = {
-  name: "Resus building, Services Australia, Palmerston",
+  name: "Regus Australia, Palmerston",
+  address: "Regus Australia, 1 Palmerston Circuit, Palmerston NT 0830",
   latitude: -12.4785082,
   longitude: 130.9854825,
   radiusM: 200,
@@ -74,8 +75,39 @@ export function formatDistance(metres: number) {
   return `${(metres / 1000).toFixed(1)} km`;
 }
 
+type PhotonProperties = {
+  name?: string;
+  housenumber?: string;
+  street?: string;
+  district?: string;
+  city?: string;
+  state?: string;
+  postcode?: string;
+};
+
 export async function describePlace(latitude: number, longitude: number) {
-  if (distanceMetres(latitude, longitude) <= WORK_SITE.radiusM) return WORK_SITE.name;
+  const onSite = distanceMetres(latitude, longitude) <= WORK_SITE.radiusM;
+  const lookedUp = await lookupAddress(latitude, longitude);
+  if (onSite) return WORK_SITE.address;
+  return lookedUp;
+}
+
+async function lookupAddress(latitude: number, longitude: number) {
+  try {
+    const response = await fetch(
+      `https://photon.komoot.io/reverse?lat=${latitude}&lon=${longitude}`,
+    );
+    if (response.ok) {
+      const data = (await response.json()) as {
+        features?: Array<{ properties?: PhotonProperties }>;
+      };
+      const line = formatPhoton(data.features?.[0]?.properties);
+      if (line) return line;
+    }
+  } catch {
+    // Fall through to the coarser lookup.
+  }
+
   try {
     const response = await fetch(
       `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`,
@@ -85,8 +117,9 @@ export async function describePlace(latitude: number, longitude: number) {
       locality?: string;
       city?: string;
       principalSubdivision?: string;
+      postcode?: string;
     };
-    const parts = [data.locality, data.city, data.principalSubdivision].filter(
+    const parts = [data.locality, data.city, data.principalSubdivision, data.postcode].filter(
       (part, index, all): part is string => Boolean(part) && all.indexOf(part) === index,
     );
     return parts.length > 0 ? parts.join(", ") : null;
@@ -95,10 +128,18 @@ export async function describePlace(latitude: number, longitude: number) {
   }
 }
 
-export function clockInBlock(latitude: number, longitude: number) {
+function formatPhoton(properties: PhotonProperties | undefined) {
+  if (!properties) return null;
+  const street = [properties.housenumber, properties.street].filter(Boolean).join(" ");
+  const parts = [properties.name, street, properties.district, properties.city, properties.state, properties.postcode]
+    .filter((part, index, all): part is string => Boolean(part) && all.indexOf(part) === index);
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
+export function offSiteMessage(latitude: number, longitude: number) {
   const metres = distanceMetres(latitude, longitude);
   if (metres <= WORK_SITE.radiusM) return null;
-  return `You are about ${formatDistance(metres)} from the Resus building at Services Australia, Palmerston. Clock in only works within 200 metres of that building. You need to be there.`;
+  return `You are not in the location. Be at Regus Australia, 1 Palmerston Circuit, Palmerston. You are about ${formatDistance(metres)} away.`;
 }
 
 export function formatClockTime(date: Date) {

@@ -9,8 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   EVENT_LABEL,
   WORK_SITE,
-  clockInBlock,
   describePlace,
+  offSiteMessage,
   distanceMetres,
   errorText,
   formatClockTime,
@@ -90,16 +90,13 @@ export function ClockDesk({
 
   useEffect(() => {
     if (!location) return;
-    const key = `${location.latitude.toFixed(3)},${location.longitude.toFixed(3)}`;
+    const key = `${location.latitude.toFixed(4)},${location.longitude.toFixed(4)}`;
     if (placeKey.current === key) return;
     placeKey.current = key;
     const controller = new AbortController();
-    const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${location.latitude}&longitude=${location.longitude}&localityLanguage=en`;
-    fetch(url, { signal: controller.signal })
-      .then((response) => response.json())
-      .then((data: { locality?: string; principalSubdivision?: string; countryName?: string }) => {
-        const parts = [data.locality, data.principalSubdivision, data.countryName].filter(Boolean);
-        if (parts.length > 0) setPlace(parts.join(", "));
+    describePlace(location.latitude, location.longitude)
+      .then((next) => {
+        if (!controller.signal.aborted && next) setPlace(next);
       })
       .catch(() => {});
     return () => controller.abort();
@@ -230,8 +227,8 @@ export function ClockDesk({
 
     try {
       const where = await currentLocation();
-      if (eventType === "shift_in") {
-        const blocked = clockInBlock(where.latitude, where.longitude);
+      if (eventType === "shift_in" || eventType === "shift_out") {
+        const blocked = offSiteMessage(where.latitude, where.longitude);
         if (blocked) throw new Error(blocked);
       }
       await ensureCamera();
@@ -273,6 +270,7 @@ export function ClockDesk({
   const paused = !profile.active;
   const metres = location ? distanceMetres(location.latitude, location.longitude) : null;
   const onSite = metres != null && metres <= WORK_SITE.radiusM;
+  const awayMessage = location && !onSite ? offSiteMessage(location.latitude, location.longitude) : null;
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 pt-6 pb-40 md:px-8 md:pb-10">
@@ -290,10 +288,13 @@ export function ClockDesk({
           {locationError
             ? locationError
             : metres == null
-              ? "Finding where you are in relation to the Resus building."
+              ? "Finding your address."
               : onSite
-                ? `You are on site, about ${formatDistance(metres)} from the Resus building. Clock in is open.`
-                : `You are about ${formatDistance(metres)} away. Clock in only works within 200 metres of the Resus building, Services Australia, Palmerston.`}
+                ? `You are in the location, about ${formatDistance(metres)} from Regus Australia. Clock in and clock out are open.`
+                : awayMessage}
+        </p>
+        <p className="mt-4 max-w-xl text-base font-medium leading-snug">
+          {place ?? "Waiting for the full address from this device."}
         </p>
       </section>
 
@@ -327,18 +328,17 @@ export function ClockDesk({
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <MapPin className="size-4" />
-                Resus building
+                Where you are
               </CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
-              <p className="text-sm font-medium">{WORK_SITE.name}</p>
+              <p className="text-sm font-medium leading-snug">{place ?? "Reading the full address…"}</p>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                {place ? `You are reading as ${place}.` : "Waiting for a place name from this device."} Clock in is
-                accepted only inside a 200 metre circle around this building.
+                Clock in and clock out only work within 200 metres of {WORK_SITE.address}.
               </p>
               {!onSite && metres != null ? (
                 <p className="rounded-2xl bg-destructive/10 px-3 py-2 text-sm text-destructive" role="status">
-                  Too far to clock in. You need to be at the Resus building.
+                  You are not in the location. Be at Regus Australia, Palmerston.
                 </p>
               ) : null}
             </CardContent>

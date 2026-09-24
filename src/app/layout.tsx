@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     default: "DGK Clock",
     template: "%s · DGK Clock",
   },
-  description: "Shift clock for the Resus building at Services Australia, Palmerston.",
+  description: "Shift clock for Regus Australia, 1 Palmerston Circuit, Palmerston.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

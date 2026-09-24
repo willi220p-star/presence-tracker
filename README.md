@@ -1,6 +1,6 @@
 # DGK Clock
 
-A shift clock for the Resus building at Services Australia, Palmerston. Admins create a login ID and password for each person, and can change or delete those logins. People clock a shift and a break. Clock in only works within 200 metres of the building. Every punch stores a photo and the place. Worked time is the shift minus breaks.
+A shift clock for Regus Australia at 1 Palmerston Circuit, Palmerston. Admins create a login ID and password for each person, and can change or delete those logins. Anyone can reset a forgotten password from the sign-in page. People clock a shift and a break. Clock in and clock out only work within 200 metres of Regus. Every punch stores a photo and the full address. Worked time is the shift minus breaks.
 
 ## Run it
 

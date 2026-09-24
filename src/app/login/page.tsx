@@ -24,7 +24,7 @@ export default function LoginPage() {
             On the clock.
           </h1>
           <p className="mt-6 max-w-sm text-base leading-relaxed text-primary-foreground/75">
-            Shift and break punches for the Resus building at Services Australia, Palmerston.
+            Shift and break punches for Regus Australia, 1 Palmerston Circuit, Palmerston.
           </p>
         </div>
         <p className="relative text-sm text-primary-foreground/60">Palmerston · Darwin</p>
