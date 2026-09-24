@@ -8,13 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   EVENT_LABEL,
+  WORK_SITE,
+  clockInBlock,
+  describePlace,
+  distanceMetres,
   errorText,
   formatClockTime,
-  formatCoord,
+  formatDistance,
   formatLongDate,
-  formatWhen,
-  mapEmbed,
-  mapLink,
+  formatTimeOnly,
   type EventType,
   type Profile,
   type Punch,
@@ -115,7 +117,7 @@ export function ClockDesk({
     const supabase = createClient();
     const { data, error } = await supabase
       .from("daymark_punches")
-      .select("id, user_id, event_type, occurred_at, latitude, longitude, accuracy_m, photo_path")
+      .select("id, user_id, event_type, occurred_at, latitude, longitude, accuracy_m, photo_path, place_name")
       .eq("user_id", profile.id)
       .order("occurred_at", { ascending: false })
       .limit(80);
@@ -227,8 +229,14 @@ export function ClockDesk({
     let photoPath: string | null = null;
 
     try {
+      const where = await currentLocation();
+      if (eventType === "shift_in") {
+        const blocked = clockInBlock(where.latitude, where.longitude);
+        if (blocked) throw new Error(blocked);
+      }
       await ensureCamera();
-      const [photo, where] = await Promise.all([capturePhoto(), currentLocation()]);
+      const photo = await capturePhoto();
+      const placeName = await describePlace(where.latitude, where.longitude);
       photoPath = `${profile.id}/${crypto.randomUUID()}.jpg`;
       const { error: uploadError } = await supabase.storage
         .from("daymark-photos")
@@ -242,6 +250,7 @@ export function ClockDesk({
         longitude: where.longitude,
         accuracy_m: where.accuracy,
         photo_path: photoPath,
+        place_name: placeName,
       });
       if (insertError) throw new Error(insertError.message);
 
@@ -262,18 +271,31 @@ export function ClockDesk({
   const summary = summarize(punches, now.getTime());
   const timeline = visiblePunches(punches, now);
   const paused = !profile.active;
+  const metres = location ? distanceMetres(location.latitude, location.longitude) : null;
+  const onSite = metres != null && metres <= WORK_SITE.radiusM;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 pt-6 pb-40 md:px-8 md:pb-10">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm text-muted-foreground">{formatLongDate(now)}</p>
-          <h1 className="font-heading text-4xl tracking-tight md:text-5xl">{formatClockTime(now)}</h1>
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 pt-6 pb-40 md:px-8 md:pb-10">
+      <section className="overflow-hidden rounded-[1.75rem] bg-primary px-6 py-7 text-primary-foreground shadow-sm md:px-8">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-sm text-primary-foreground/70">{formatLongDate(now)}</p>
+            <h1 className="mt-1 font-heading text-5xl tracking-tight tabular-nums md:text-6xl">{formatClockTime(now)}</h1>
+          </div>
+          <Badge variant="secondary" className="h-8 bg-primary-foreground/15 px-3 text-primary-foreground">
+            {STATUS_COPY[summary.status]}
+          </Badge>
         </div>
-        <Badge variant={summary.status === "off" ? "secondary" : "default"} className="h-7 px-3">
-          {STATUS_COPY[summary.status]}
-        </Badge>
-      </div>
+        <p className="mt-6 max-w-xl text-sm leading-relaxed text-primary-foreground/80">
+          {locationError
+            ? locationError
+            : metres == null
+              ? "Finding where you are in relation to the Resus building."
+              : onSite
+                ? `You are on site, about ${formatDistance(metres)} from the Resus building. Clock in is open.`
+                : `You are about ${formatDistance(metres)} away. Clock in only works within 200 metres of the Resus building, Services Australia, Palmerston.`}
+        </p>
+      </section>
 
       {paused ? (
         <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive" role="status">
@@ -305,36 +327,20 @@ export function ClockDesk({
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <MapPin className="size-4" />
-                Where you are
+                Resus building
               </CardTitle>
             </CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              {location ? (
-                <>
-                  <p className="text-sm font-medium">{place ?? "Reading the place name…"}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatCoord(location.latitude, location.longitude)}
-                    {location.accuracy != null ? ` · about ${Math.round(location.accuracy)} m` : ""}
-                  </p>
-                  <iframe
-                    title="Live location"
-                    className="h-40 w-full rounded-xl border border-border"
-                    src={mapEmbed(location.latitude, location.longitude)}
-                  />
-                  <a
-                    className="text-sm text-primary underline-offset-4 hover:underline"
-                    href={mapLink(location.latitude, location.longitude)}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open the map
-                  </a>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  {locationError ?? "Asking for your location so the punch can record where you are."}
+            <CardContent className="flex flex-col gap-2">
+              <p className="text-sm font-medium">{WORK_SITE.name}</p>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {place ? `You are reading as ${place}.` : "Waiting for a place name from this device."} Clock in is
+                accepted only inside a 200 metre circle around this building.
+              </p>
+              {!onSite && metres != null ? (
+                <p className="rounded-2xl bg-destructive/10 px-3 py-2 text-sm text-destructive" role="status">
+                  Too far to clock in. You need to be at the Resus building.
                 </p>
-              )}
+              ) : null}
             </CardContent>
           </Card>
 
@@ -458,16 +464,8 @@ export function ClockDesk({
                   )}
                   <div className="min-w-0">
                     <p className="font-medium">{EVENT_LABEL[punch.event_type]}</p>
-                    <p className="text-sm text-muted-foreground">{formatWhen(punch.occurred_at)}</p>
-                    <p className="mt-1 text-sm">{formatCoord(punch.latitude, punch.longitude)}</p>
-                    <a
-                      className="text-sm text-primary underline-offset-4 hover:underline"
-                      href={mapLink(punch.latitude, punch.longitude)}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Map
-                    </a>
+                    <p className="text-sm text-muted-foreground">{formatTimeOnly(punch.occurred_at)}</p>
+                    <p className="mt-1 text-sm">{punch.place_name ?? "Place not recorded"}</p>
                   </div>
                 </CardContent>
               </Card>

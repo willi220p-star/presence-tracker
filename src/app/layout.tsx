@@ -16,10 +16,10 @@ const fraunces = Fraunces({
 
 export const metadata: Metadata = {
   title: {
-    default: "Daymark",
-    template: "%s · Daymark",
+    default: "DGK Clock",
+    template: "%s · DGK Clock",
   },
-  description: "Clock shifts and breaks with a photo and the place you were standing.",
+  description: "Shift clock for the Resus building at Services Australia, Palmerston.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

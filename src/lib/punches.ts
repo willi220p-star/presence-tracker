@@ -23,7 +23,7 @@ export async function loadOwnPunches(userId: string): Promise<PunchCard[]> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("daymark_punches")
-    .select("id, user_id, event_type, occurred_at, latitude, longitude, accuracy_m, photo_path")
+    .select("id, user_id, event_type, occurred_at, latitude, longitude, accuracy_m, photo_path, place_name")
     .eq("user_id", userId)
     .order("occurred_at", { ascending: false })
     .limit(80);

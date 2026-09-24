@@ -10,17 +10,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   EVENT_LABEL,
+  dayHeading,
   errorText,
-  formatCoord,
-  formatWhen,
+  formatTimeOnly,
   localDateInput,
-  mapLink,
   type Profile,
   type Punch,
 } from "@/lib/daymark";
 import { createClient } from "@/lib/supabase/client";
 
-type Person = Profile;
+type Person = Profile & { password: string | null };
 
 type TimeCard = Punch & {
   photoUrl: string | null;
@@ -42,7 +41,6 @@ export function AdminDesk({ profile }: { profile: Profile }) {
   const [peopleError, setPeopleError] = useState<string | null>(null);
   const [cardsError, setCardsError] = useState<string | null>(null);
   const [personFilter, setPersonFilter] = useState("all");
-  const [date, setDate] = useState(() => localDateInput(new Date()));
   const [name, setName] = useState("");
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
@@ -51,49 +49,78 @@ export function AdminDesk({ profile }: { profile: Profile }) {
   const [created, setCreated] = useState<CreatedLogin | null>(null);
   const [nextPassword, setNextPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
+  const [openPerson, setOpenPerson] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const [draftPassword, setDraftPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     void loadPeople();
   }, []);
 
   useEffect(() => {
-    void loadCards(date, personFilter);
-  }, [date, personFilter]);
+    void loadCards(personFilter);
+  }, [personFilter]);
 
   const staff = useMemo(
     () => people.filter((person) => person.role === "staff"),
     [people],
   );
 
+  const dayGroups = useMemo(() => {
+    const groups = new Map<string, TimeCard[]>();
+    for (const card of cards) {
+      const key = localDateInput(new Date(card.occurred_at));
+      const list = groups.get(key);
+      if (list) list.push(card);
+      else groups.set(key, [card]);
+    }
+    return [...groups.entries()];
+  }, [cards]);
+
   async function loadPeople() {
     setPeopleError(null);
     const supabase = createClient();
-    const { data, error } = await supabase
-      .from("daymark_profiles")
-      .select("id, login_id, display_name, role, active, created_at")
-      .order("display_name");
+    const [{ data, error }, secrets] = await Promise.all([
+      supabase
+        .from("daymark_profiles")
+        .select("id, login_id, display_name, role, active, created_at")
+        .order("display_name"),
+      supabase.from("daymark_login_secrets").select("user_id, password"),
+    ]);
 
     if (error) setPeopleError(error.message);
-    else setPeople((data ?? []) as Person[]);
+    else {
+      const passwords = new Map(
+        ((secrets.data ?? []) as Array<{ user_id: string; password: string }>).map((row) => [row.user_id, row.password]),
+      );
+      setPeople(
+        ((data ?? []) as Profile[]).map((person) => ({
+          ...person,
+          password: passwords.get(person.id) ?? null,
+        })),
+      );
+    }
     setLoadingPeople(false);
   }
 
-  async function loadCards(selectedDate: string, selectedPerson: string) {
+  async function loadCards(selectedPerson: string) {
     setLoadingCards(true);
     setCardsError(null);
     const supabase = createClient();
-    const start = new Date(`${selectedDate}T00:00:00`);
-    const end = new Date(`${selectedDate}T23:59:59.999`);
+    const start = new Date();
+    start.setDate(start.getDate() - 30);
 
     let query = supabase
       .from("daymark_punches")
       .select(
-        "id, user_id, event_type, occurred_at, latitude, longitude, accuracy_m, photo_path, daymark_profiles(display_name, login_id)",
+        "id, user_id, event_type, occurred_at, latitude, longitude, accuracy_m, photo_path, place_name, daymark_profiles(display_name, login_id)",
       )
       .gte("occurred_at", start.toISOString())
-      .lte("occurred_at", end.toISOString())
       .order("occurred_at", { ascending: false })
-      .limit(300);
+      .limit(400);
 
     if (selectedPerson !== "all") query = query.eq("user_id", selectedPerson);
 
@@ -126,6 +153,7 @@ export function AdminDesk({ profile }: { profile: Profile }) {
           longitude: row.longitude,
           accuracy_m: row.accuracy_m,
           photo_path: row.photo_path,
+          place_name: row.place_name,
           photoUrl: urls.get(row.photo_path) ?? null,
           displayName: linked?.display_name ?? "Unknown person",
           loginId: linked?.login_id ?? "",
@@ -151,7 +179,9 @@ export function AdminDesk({ profile }: { profile: Profile }) {
       if (!data || typeof data !== "object") throw new Error("Could not create that login.");
 
       const person = data as Person;
-      setPeople((current) => [...current, { ...person, created_at: new Date().toISOString() }].sort(byName));
+      setPeople((current) =>
+        [...current, { ...person, password, created_at: new Date().toISOString() }].sort(byName),
+      );
       setCreated({
         displayName: person.display_name,
         loginId: person.login_id,
@@ -184,6 +214,57 @@ export function AdminDesk({ profile }: { profile: Profile }) {
     toast.success(next ? `${person.display_name} can sign in again.` : `${person.display_name} is paused.`);
   }
 
+  async function saveStaffPassword(person: Person) {
+    if (draftPassword.length < 8) {
+      toast.error("Use at least 8 characters.");
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.rpc("set_staff_password", {
+        target_id: person.id,
+        password: draftPassword,
+      });
+      if (error) throw error;
+      setPeople((current) =>
+        current.map((item) => (item.id === person.id ? { ...item, password: draftPassword } : item)),
+      );
+      setDraftPassword("");
+      setRevealed(person.id);
+      toast.success(`Password updated for ${person.display_name}.`);
+    } catch (error) {
+      toast.error(errorText(error, "Could not update that password."));
+    } finally {
+      setSavingPassword(false);
+    }
+  }
+
+  async function deletePerson(person: Person) {
+    setDeleting(true);
+    try {
+      const supabase = createClient();
+      const { data: files } = await supabase.storage.from("daymark-photos").list(person.id, { limit: 1000 });
+      const paths = (files ?? []).filter((file) => file.name).map((file) => `${person.id}/${file.name}`);
+      if (paths.length > 0) {
+        const { error: photoError } = await supabase.storage.from("daymark-photos").remove(paths);
+        if (photoError) throw photoError;
+      }
+      const { error } = await supabase.rpc("delete_staff_login", { target_id: person.id });
+      if (error) throw error;
+      setPeople((current) => current.filter((item) => item.id !== person.id));
+      setCards((current) => current.filter((card) => card.user_id !== person.id));
+      setOpenPerson(null);
+      setConfirmDelete(null);
+      if (personFilter === person.id) setPersonFilter("all");
+      toast.success(`${person.display_name} was deleted.`);
+    } catch (error) {
+      toast.error(errorText(error, "Could not delete that person."));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   async function changePassword(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (nextPassword.length < 8) {
@@ -211,7 +292,7 @@ export function AdminDesk({ profile }: { profile: Profile }) {
           <CardHeader>
             <CardTitle>Add a person</CardTitle>
             <CardDescription>
-              They sign in with this login ID and password. Daymark does not email it, so pass it on yourself.
+              They sign in with this login ID and password. Hand it to them yourself.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -303,7 +384,7 @@ export function AdminDesk({ profile }: { profile: Profile }) {
         <Card>
           <CardHeader>
             <CardTitle>People</CardTitle>
-            <CardDescription>Pause a login to stop new punches without deleting the history.</CardDescription>
+            <CardDescription>Open a person to see their password, replace it, pause them, or delete them.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             {loadingPeople ? <p className="text-sm text-muted-foreground">Loading people…</p> : null}
@@ -314,23 +395,113 @@ export function AdminDesk({ profile }: { profile: Profile }) {
               </p>
             ) : null}
             <ul className="flex flex-col gap-2">
-              {people.map((person) => (
-                <li key={person.id} className="flex items-center justify-between gap-3 rounded-xl bg-secondary px-3 py-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{person.display_name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {person.login_id} · {person.role === "admin" ? "Admin" : "Staff"}
-                    </p>
-                  </div>
-                  {person.role === "admin" ? (
-                    <Badge variant="outline">Admin</Badge>
-                  ) : (
-                    <Button type="button" variant="ghost" className="h-8" onClick={() => toggleActive(person)}>
-                      {person.active ? "Pause" : "Restore"}
-                    </Button>
-                  )}
-                </li>
-              ))}
+              {people.map((person) => {
+                const open = openPerson === person.id;
+                return (
+                  <li key={person.id} className="rounded-2xl bg-secondary px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{person.display_name}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {person.login_id} · {person.role === "admin" ? "Admin" : person.active ? "Staff" : "Paused"}
+                        </p>
+                      </div>
+                      {person.role === "admin" ? (
+                        <Badge variant="outline">Admin</Badge>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="h-8"
+                          onClick={() => {
+                            setOpenPerson(open ? null : person.id);
+                            setDraftPassword("");
+                            setConfirmDelete(null);
+                          }}
+                        >
+                          {open ? "Close" : "Manage"}
+                        </Button>
+                      )}
+                    </div>
+                    {open && person.role === "staff" ? (
+                      <div className="mt-3 flex flex-col gap-3 border-t border-border/70 pt-3">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Password</p>
+                          <p className="mt-1 font-medium tracking-wide">
+                            {person.password
+                              ? revealed === person.id
+                                ? person.password
+                                : "•".repeat(Math.min(person.password.length, 12))
+                              : "Not stored yet. Set a new one below."}
+                          </p>
+                          {person.password ? (
+                            <button
+                              type="button"
+                              className="mt-1 text-xs text-primary"
+                              onClick={() => setRevealed(revealed === person.id ? null : person.id)}
+                            >
+                              {revealed === person.id ? "Hide" : "Show"}
+                            </button>
+                          ) : null}
+                        </div>
+                        <form
+                          method="post"
+                          action="."
+                          className="flex flex-col gap-2"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void saveStaffPassword(person);
+                          }}
+                        >
+                          <Label htmlFor={`password-${person.id}`}>New password</Label>
+                          <Input
+                            id={`password-${person.id}`}
+                            type="text"
+                            value={draftPassword}
+                            onChange={(event) => setDraftPassword(event.target.value)}
+                            minLength={8}
+                            className="h-10 rounded-xl bg-background px-3"
+                            autoComplete="new-password"
+                          />
+                          <Button type="submit" variant="outline" className="h-9" disabled={savingPassword}>
+                            {savingPassword ? "Saving…" : "Update password"}
+                          </Button>
+                        </form>
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" variant="outline" className="h-9" onClick={() => toggleActive(person)}>
+                            {person.active ? "Pause" : "Restore"}
+                          </Button>
+                          {confirmDelete === person.id ? (
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              className="h-9"
+                              disabled={deleting}
+                              onClick={() => void deletePerson(person)}
+                            >
+                              {deleting ? "Deleting…" : "Delete permanently"}
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              className="h-9"
+                              onClick={() => setConfirmDelete(person.id)}
+                            >
+                              Delete
+                            </Button>
+                          )}
+                        </div>
+                        {confirmDelete === person.id ? (
+                          <p className="text-xs leading-relaxed text-muted-foreground">
+                            This removes {person.display_name}, their punches, and their photos.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           </CardContent>
         </Card>
@@ -341,46 +512,35 @@ export function AdminDesk({ profile }: { profile: Profile }) {
           <div>
             <h1 className="font-heading text-3xl tracking-tight">Time cards</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Clock in, clock out, and breaks, with the photo, date, time, and place.
+              Each day is its own group, with the time and the place of every punch.
             </p>
           </div>
           <Button
             type="button"
             variant="outline"
             className="h-10 bg-card"
-            onClick={() => void loadCards(date, personFilter)}
+            onClick={() => void loadCards(personFilter)}
           >
             <RefreshCw />
             Refresh
           </Button>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Person" id="person-filter">
-            <select
-              id="person-filter"
-              value={personFilter}
-              onChange={(event) => setPersonFilter(event.target.value)}
-              className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm"
-            >
-              <option value="all">Everyone</option>
-              {staff.map((person) => (
-                <option key={person.id} value={person.id}>
-                  {person.display_name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Date" id="date-filter">
-            <Input
-              id="date-filter"
-              type="date"
-              value={date}
-              onChange={(event) => setDate(event.target.value)}
-              className="h-11 rounded-xl bg-card px-3"
-            />
-          </Field>
-        </div>
+        <Field label="Person" id="person-filter">
+          <select
+            id="person-filter"
+            value={personFilter}
+            onChange={(event) => setPersonFilter(event.target.value)}
+            className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm"
+          >
+            <option value="all">Everyone</option>
+            {staff.map((person) => (
+              <option key={person.id} value={person.id}>
+                {person.display_name}
+              </option>
+            ))}
+          </select>
+        </Field>
 
         {loadingCards ? <p className="text-sm text-muted-foreground">Loading time cards…</p> : null}
         {cardsError ? (
@@ -391,53 +551,47 @@ export function AdminDesk({ profile }: { profile: Profile }) {
         {!loadingCards && !cardsError && cards.length === 0 ? (
           <Card>
             <CardContent className="py-10 text-sm leading-relaxed text-muted-foreground">
-              No punches on this date. When someone clocks in, the photo, time, and location show up here.
+              No punches in the last 30 days. When someone clocks in on site, the photo, time, and place show up here.
             </CardContent>
           </Card>
         ) : null}
 
-        <ul className="flex flex-col gap-3">
-          {cards.map((card) => (
-            <li key={card.id}>
-              <Card className="bg-card/90">
-                <CardContent className="flex flex-col gap-4 sm:flex-row">
-                  {card.photoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={card.photoUrl}
-                      alt={`Photo from ${card.displayName}'s ${EVENT_LABEL[card.event_type].toLowerCase()}`}
-                      className="h-40 w-full rounded-xl object-cover sm:h-28 sm:w-36"
-                    />
-                  ) : (
-                    <div className="grid h-28 w-full place-items-center rounded-xl bg-muted text-xs text-muted-foreground sm:w-36">
-                      Photo unavailable
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium">{card.displayName}</p>
-                      <Badge variant="secondary">{EVENT_LABEL[card.event_type]}</Badge>
-                    </div>
-                    <p className="mt-1 text-sm text-muted-foreground">{card.loginId}</p>
-                    <p className="mt-2 text-sm">{formatWhen(card.occurred_at)}</p>
-                    <p className="text-sm">{formatCoord(card.latitude, card.longitude)}</p>
-                    {card.accuracy_m != null ? (
-                      <p className="text-xs text-muted-foreground">Accurate to about {Math.round(card.accuracy_m)} m</p>
-                    ) : null}
-                    <a
-                      className="mt-1 inline-block text-sm text-primary underline-offset-4 hover:underline"
-                      href={mapLink(card.latitude, card.longitude)}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open location
-                    </a>
-                  </div>
-                </CardContent>
-              </Card>
-            </li>
-          ))}
-        </ul>
+        {dayGroups.map(([day, group]) => (
+          <section key={day} className="flex flex-col gap-3">
+            <h2 className="font-heading text-xl tracking-tight">{dayHeading(day)}</h2>
+            <ul className="flex flex-col gap-3">
+              {group.map((card) => (
+                <li key={card.id}>
+                  <Card className="bg-card/90">
+                    <CardContent className="flex flex-col gap-4 sm:flex-row">
+                      {card.photoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={card.photoUrl}
+                          alt={`Photo from ${card.displayName}'s ${EVENT_LABEL[card.event_type].toLowerCase()}`}
+                          className="h-40 w-full rounded-xl object-cover sm:h-28 sm:w-36"
+                        />
+                      ) : (
+                        <div className="grid h-28 w-full place-items-center rounded-xl bg-muted text-xs text-muted-foreground sm:w-36">
+                          Photo unavailable
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium">{card.displayName}</p>
+                          <Badge variant="secondary">{EVENT_LABEL[card.event_type]}</Badge>
+                        </div>
+                        <p className="mt-1 text-sm text-muted-foreground">{card.loginId}</p>
+                        <p className="mt-2 text-sm">{formatTimeOnly(card.occurred_at)}</p>
+                        <p className="text-sm">{card.place_name ?? "Place not recorded"}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
       </section>
     </div>
   );

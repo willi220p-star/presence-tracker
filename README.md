@@ -1,6 +1,6 @@
-# Daymark
+# DGK Clock
 
-A shift clock with two logins. Admins create a login ID and password for each person. People clock a shift and a break, and every punch stores a photo plus the place they were standing. Worked time is the shift minus breaks.
+A shift clock for the Resus building at Services Australia, Palmerston. Admins create a login ID and password for each person, and can change or delete those logins. People clock a shift and a break. Clock in only works within 200 metres of the building. Every punch stores a photo and the place. Worked time is the shift minus breaks.
 
 ## Run it
 
@@ -14,12 +14,7 @@ Open [http://127.0.0.1:41731](http://127.0.0.1:41731).
 
 The public site is [https://willi220p-star.github.io/presence-tracker/](https://willi220p-star.github.io/presence-tracker/). Pushes to `main` publish it with GitHub Pages.
 
-Starter admin:
-
-- Login ID: `admin`
-- Password: `Daymark-Admin-1842`
-
-Change that password from the admin desk after you sign in.
+The starter admin password is changed from the admin desk. It is not shown on the sign-in page.
 
 ## What each person sees
 
@@ -31,6 +26,6 @@ Change that password from the admin desk after you sign in.
 
 The browser client lives in `src/lib/supabase/client.ts`. Server components use `src/lib/supabase/server.ts`.
 
-Daymark tables are in the personal Supabase project. A new project could not be created because the free plan already has two projects. The campaign project was left alone.
+DGK Clock tables are in the personal Supabase project. A new project could not be created because the free plan already has two projects. The campaign project was left alone.
 
 Schema, row-level security, and the private photo bucket are in `supabase/migrations/20260924040000_daymark.sql`. Admins create staff with the `create_staff_login` database function, so the service role stays off the browser.

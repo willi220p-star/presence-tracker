@@ -48,7 +48,7 @@ export function LoginForm() {
 
       if (!profile || (profile.role !== "admin" && profile.role !== "staff")) {
         await supabase.auth.signOut();
-        setError("This login is not set up in Daymark.");
+        setError("This login is not set up in DGK Clock.");
         return;
       }
 
