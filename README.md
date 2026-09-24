@@ -1,6 +1,6 @@
 # DGK Clock
 
-A shift clock for Regus Australia at 1 Palmerston Circuit, Palmerston. Admins create a login ID and password for each person, and can change or delete those logins. Anyone can reset a forgotten password from the sign-in page. People clock a shift and a break. Clock in and clock out only work within 200 metres of Regus. Every punch stores a photo and the full address. Worked time is the shift minus breaks.
+A shift clock for the Regus office on the first floor at 1 Palmerston Circuit, Palmerston, above Service Australia. Admins create a login ID, email, and password for each person. Forgot password sends a reset link to that email. Clock in, clock out, break in, and break out only work within 200 metres of that office. Every punch stores a photo and the full address, and each day is one table row. Worked time is the shift minus breaks.
 
 ## Run it
 
@@ -18,9 +18,9 @@ The starter admin password is changed from the admin desk. It is not shown on th
 
 ## What each person sees
 
-**Admin** can add people, pause a login, and read every time card: who, which punch (shift or break), the date and time, the photo, and the location.
+**Admin** can add people, save the email used for a password reset, pause a login, and read every time card in a day table: clock in, clock out, break in, and break out, with the suburb and street on the row. A small photo opens larger when selected.
 
-**Staff** see a live clock, today's worked time with breaks taken out, a live location, and buttons for shift clock in, shift clock out, break clock in, and break clock out. The camera asks for access on the punch and the photo is saved with the location.
+**Staff** see a live clock, today's worked time with breaks taken out, the full address, and the same day table. The camera asks for access on the punch.
 
 ## Supabase
 

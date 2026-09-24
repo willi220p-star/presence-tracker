@@ -3,23 +3,16 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Eye, EyeOff, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { PunchDayTable } from "@/components/punch-day-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  EVENT_LABEL,
-  dayHeading,
-  errorText,
-  formatTimeOnly,
-  localDateInput,
-  type Profile,
-  type Punch,
-} from "@/lib/daymark";
+import { errorText, type Profile, type Punch } from "@/lib/daymark";
 import { createClient } from "@/lib/supabase/client";
 
-type Person = Profile & { password: string | null };
+type Person = Profile & { password: string | null; contact_email: string | null };
 
 type TimeCard = Punch & {
   photoUrl: string | null;
@@ -31,6 +24,7 @@ type CreatedLogin = {
   displayName: string;
   loginId: string;
   password: string;
+  email: string;
 };
 
 export function AdminDesk({ profile }: { profile: Profile }) {
@@ -43,6 +37,7 @@ export function AdminDesk({ profile }: { profile: Profile }) {
   const [personFilter, setPersonFilter] = useState("all");
   const [name, setName] = useState("");
   const [loginId, setLoginId] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -52,6 +47,10 @@ export function AdminDesk({ profile }: { profile: Profile }) {
   const [openPerson, setOpenPerson] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<string | null>(null);
   const [draftPassword, setDraftPassword] = useState("");
+  const [draftEmail, setDraftEmail] = useState("");
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [adminEmail, setAdminEmail] = useState("");
+  const [savingAdminEmail, setSavingAdminEmail] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -69,15 +68,19 @@ export function AdminDesk({ profile }: { profile: Profile }) {
     [people],
   );
 
-  const dayGroups = useMemo(() => {
+  const personDays = useMemo(() => {
     const groups = new Map<string, TimeCard[]>();
     for (const card of cards) {
-      const key = localDateInput(new Date(card.occurred_at));
-      const list = groups.get(key);
+      const list = groups.get(card.user_id);
       if (list) list.push(card);
-      else groups.set(key, [card]);
+      else groups.set(card.user_id, [card]);
     }
-    return [...groups.entries()];
+    return [...groups.entries()].map(([userId, punches]) => ({
+      userId,
+      name: punches[0]?.displayName ?? "Unknown person",
+      loginId: punches[0]?.loginId ?? "",
+      punches,
+    }));
   }, [cards]);
 
   async function loadPeople() {
@@ -86,7 +89,7 @@ export function AdminDesk({ profile }: { profile: Profile }) {
     const [{ data, error }, secrets] = await Promise.all([
       supabase
         .from("daymark_profiles")
-        .select("id, login_id, display_name, role, active, created_at")
+        .select("id, login_id, display_name, role, active, created_at, contact_email")
         .order("display_name"),
       supabase.from("daymark_login_secrets").select("user_id, password"),
     ]);
@@ -96,12 +99,14 @@ export function AdminDesk({ profile }: { profile: Profile }) {
       const passwords = new Map(
         ((secrets.data ?? []) as Array<{ user_id: string; password: string }>).map((row) => [row.user_id, row.password]),
       );
-      setPeople(
-        ((data ?? []) as Profile[]).map((person) => ({
-          ...person,
-          password: passwords.get(person.id) ?? null,
-        })),
-      );
+      const nextPeople = ((data ?? []) as Array<Profile & { contact_email: string | null }>).map((person) => ({
+        ...person,
+        contact_email: person.contact_email,
+        password: passwords.get(person.id) ?? null,
+      }));
+      setPeople(nextPeople);
+      const admin = nextPeople.find((person) => person.id === profile.id);
+      if (admin) setAdminEmail(admin.contact_email ?? "");
     }
     setLoadingPeople(false);
   }
@@ -173,6 +178,7 @@ export function AdminDesk({ profile }: { profile: Profile }) {
         display_name: name.trim(),
         login_id: loginId.trim().toLowerCase(),
         password,
+        email: contactEmail.trim().toLowerCase(),
       });
 
       if (error) throw new Error(error.message);
@@ -180,15 +186,17 @@ export function AdminDesk({ profile }: { profile: Profile }) {
 
       const person = data as Person;
       setPeople((current) =>
-        [...current, { ...person, password, created_at: new Date().toISOString() }].sort(byName),
+        [...current, { ...person, contact_email: contactEmail.trim().toLowerCase(), password, created_at: new Date().toISOString() }].sort(byName),
       );
       setCreated({
         displayName: person.display_name,
         loginId: person.login_id,
         password,
+        email: contactEmail.trim().toLowerCase(),
       });
       setName("");
       setLoginId("");
+      setContactEmail("");
       setPassword("");
       toast.success(`${person.display_name} can sign in now.`);
     } catch (error) {
@@ -265,6 +273,26 @@ export function AdminDesk({ profile }: { profile: Profile }) {
     }
   }
 
+  async function saveEmail(targetId: string, email: string, onSaved: (email: string) => void) {
+    const next = email.trim().toLowerCase();
+    if (!next.includes("@")) {
+      toast.error("Enter a real email address.");
+      return;
+    }
+    setSavingEmail(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.rpc("set_login_email", { target_id: targetId, email: next });
+      if (error) throw error;
+      onSaved(next);
+      toast.success("Reset email saved.");
+    } catch (error) {
+      toast.error(errorText(error, "Could not save that email."));
+    } finally {
+      setSavingEmail(false);
+    }
+  }
+
   async function changePassword(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (nextPassword.length < 8) {
@@ -276,6 +304,8 @@ export function AdminDesk({ profile }: { profile: Profile }) {
       const supabase = createClient();
       const { error } = await supabase.auth.updateUser({ password: nextPassword });
       if (error) throw error;
+      const { error: saveError } = await supabase.rpc("save_own_password", { password: nextPassword });
+      if (saveError) throw saveError;
       setNextPassword("");
       toast.success("Admin password updated.");
     } catch (error) {
@@ -319,6 +349,19 @@ export function AdminDesk({ profile }: { profile: Profile }) {
                   required
                 />
               </Field>
+              <Field label="Email" id="new-email">
+                <Input
+                  id="new-email"
+                  type="email"
+                  value={contactEmail}
+                  onChange={(event) => setContactEmail(event.target.value)}
+                  placeholder="maya@email.com"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  className="h-11 rounded-xl bg-background px-3"
+                  required
+                />
+              </Field>
               <Field label="Password" id="new-password">
                 <div className="relative">
                   <Input
@@ -353,6 +396,9 @@ export function AdminDesk({ profile }: { profile: Profile }) {
                 <p className="text-muted-foreground">
                   Password <span className="font-medium text-foreground">{created.password}</span>
                 </p>
+                <p className="text-muted-foreground">
+                  Email <span className="font-medium text-foreground">{created.email}</span>
+                </p>
               </div>
             ) : null}
           </CardContent>
@@ -361,9 +407,37 @@ export function AdminDesk({ profile }: { profile: Profile }) {
         <Card>
           <CardHeader>
             <CardTitle>Your admin password</CardTitle>
-            <CardDescription>Replace the starter password before anyone else uses this desk.</CardDescription>
+            <CardDescription>Save the email that receives your reset link, and replace the starter password.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col gap-4">
+            <form
+              method="post"
+              action="."
+              className="flex flex-col gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setSavingAdminEmail(true);
+                void saveEmail(profile.id, adminEmail, (next) => {
+                  setAdminEmail(next);
+                  setPeople((current) =>
+                    current.map((person) => (person.id === profile.id ? { ...person, contact_email: next } : person)),
+                  );
+                }).finally(() => setSavingAdminEmail(false));
+              }}
+            >
+              <Label htmlFor="admin-email">Reset email</Label>
+              <Input
+                id="admin-email"
+                type="email"
+                value={adminEmail}
+                onChange={(event) => setAdminEmail(event.target.value)}
+                placeholder="you@email.com"
+                className="h-11 rounded-xl bg-background px-3"
+              />
+              <Button type="submit" variant="outline" className="h-10" disabled={savingAdminEmail || savingEmail}>
+                {savingAdminEmail ? "Saving…" : "Save email"}
+              </Button>
+            </form>
             <form method="post" action="." onSubmit={changePassword} className="flex flex-col gap-3">
               <Label htmlFor="admin-password">New password</Label>
               <Input
@@ -416,6 +490,7 @@ export function AdminDesk({ profile }: { profile: Profile }) {
                           onClick={() => {
                             setOpenPerson(open ? null : person.id);
                             setDraftPassword("");
+                            setDraftEmail(person.contact_email ?? "");
                             setConfirmDelete(null);
                           }}
                         >
@@ -444,6 +519,33 @@ export function AdminDesk({ profile }: { profile: Profile }) {
                             </button>
                           ) : null}
                         </div>
+                        <form
+                          method="post"
+                          action="."
+                          className="flex flex-col gap-2"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void saveEmail(person.id, draftEmail, (next) => {
+                              setDraftEmail(next);
+                              setPeople((current) =>
+                                current.map((item) => (item.id === person.id ? { ...item, contact_email: next } : item)),
+                              );
+                            });
+                          }}
+                        >
+                          <Label htmlFor={`email-${person.id}`}>Reset email</Label>
+                          <Input
+                            id={`email-${person.id}`}
+                            type="email"
+                            value={draftEmail}
+                            onChange={(event) => setDraftEmail(event.target.value)}
+                            className="h-10 rounded-xl bg-background px-3"
+                            autoComplete="email"
+                          />
+                          <Button type="submit" variant="outline" className="h-9" disabled={savingEmail}>
+                            {savingEmail ? "Saving…" : "Save email"}
+                          </Button>
+                        </form>
                         <form
                           method="post"
                           action="."
@@ -512,7 +614,7 @@ export function AdminDesk({ profile }: { profile: Profile }) {
           <div>
             <h1 className="font-heading text-3xl tracking-tight">Time cards</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Each day is its own group, with the time and the place of every punch.
+              Each day is one row: clock in, clock out, break in, and break out, with the full address. Open a photo to see it larger.
             </p>
           </div>
           <Button
@@ -556,40 +658,13 @@ export function AdminDesk({ profile }: { profile: Profile }) {
           </Card>
         ) : null}
 
-        {dayGroups.map(([day, group]) => (
-          <section key={day} className="flex flex-col gap-3">
-            <h2 className="font-heading text-xl tracking-tight">{dayHeading(day)}</h2>
-            <ul className="flex flex-col gap-3">
-              {group.map((card) => (
-                <li key={card.id}>
-                  <Card className="bg-card/90">
-                    <CardContent className="flex flex-col gap-4 sm:flex-row">
-                      {card.photoUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={card.photoUrl}
-                          alt={`Photo from ${card.displayName}'s ${EVENT_LABEL[card.event_type].toLowerCase()}`}
-                          className="h-40 w-full rounded-xl object-cover sm:h-28 sm:w-36"
-                        />
-                      ) : (
-                        <div className="grid h-28 w-full place-items-center rounded-xl bg-muted text-xs text-muted-foreground sm:w-36">
-                          Photo unavailable
-                        </div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-medium">{card.displayName}</p>
-                          <Badge variant="secondary">{EVENT_LABEL[card.event_type]}</Badge>
-                        </div>
-                        <p className="mt-1 text-sm text-muted-foreground">{card.loginId}</p>
-                        <p className="mt-2 text-sm">{formatTimeOnly(card.occurred_at)}</p>
-                        <p className="text-sm">{card.place_name ?? "Place not recorded"}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </li>
-              ))}
-            </ul>
+        {personDays.map((person) => (
+          <section key={person.userId} className="flex flex-col gap-3">
+            <div>
+              <h2 className="font-heading text-2xl tracking-tight">{person.name}</h2>
+              <p className="text-sm text-muted-foreground">{person.loginId}</p>
+            </div>
+            <PunchDayTable punches={person.punches} />
           </section>
         ))}
       </section>

@@ -19,7 +19,7 @@ export function LoginForm() {
   const [pending, setPending] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [email, setEmail] = useState("");
-  const [nextPassword, setNextPassword] = useState("");
+  const [sent, setSent] = useState(false);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -33,8 +33,13 @@ export function LoginForm() {
     setPending(true);
     try {
       const supabase = createClient();
+      const { data: resolved, error: resolveError } = await supabase.rpc("sign_in_email", {
+        login_id: id,
+      });
+      if (resolveError) throw resolveError;
+      const mail = typeof resolved === "string" && resolved ? resolved : emailForLogin(id);
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: emailForLogin(id),
+        email: mail,
         password,
       });
 
@@ -74,60 +79,31 @@ export function LoginForm() {
     event.preventDefault();
     setError(null);
     const mail = email.trim().toLowerCase();
-    if (!mail || nextPassword.length < 8) {
-      setError("Enter your email and a new password of at least 8 characters.");
-      return;
-    }
-    if (nextPassword !== password) {
-      setError("Type the new password the same way in both fields.");
+    if (!mail.includes("@")) {
+      setError("Enter the email saved on this login.");
       return;
     }
 
     setPending(true);
     try {
       const supabase = createClient();
-      const { data, error: resetError } = await supabase.rpc("reset_password_by_email", {
+      const { data: ready, error: readyError } = await supabase.rpc("recovery_email_ready", {
         email: mail,
-        password: nextPassword,
       });
-      if (resetError) throw new Error(resetError.message);
-
-      const login =
-        data && typeof data === "object" && "login_id" in data && typeof data.login_id === "string"
-          ? data.login_id
-          : mail.includes("@")
-            ? mail.split("@")[0]
-            : mail;
-
-      const { data: signedIn, error: signInError } = await supabase.auth.signInWithPassword({
-        email: emailForLogin(login),
-        password: nextPassword,
-      });
-      if (signInError || !signedIn.user) {
-        setResetting(false);
-        setLoginId(login);
-        setPassword("");
-        setError("Password updated. Sign in with your login ID and the new password.");
+      if (readyError) throw readyError;
+      if (!ready) {
+        setError("That email is not on a login yet. An admin adds it under People, then a reset link can be sent.");
         return;
       }
 
-      const { data: profile } = await supabase
-        .from("daymark_profiles")
-        .select("id, login_id, display_name, role, active, created_at")
-        .eq("id", signedIn.user.id)
-        .maybeSingle();
-
-      if (!profile || (profile.role !== "admin" && profile.role !== "staff") || !profile.active) {
-        await supabase.auth.signOut();
-        setResetting(false);
-        setError("Password updated. Sign in with your login ID and the new password.");
-        return;
-      }
-
-      rememberProfile(profile);
-      router.push(profile.role === "admin" ? "/admin" : "/clock");
+      const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(mail, {
+        redirectTo: `${window.location.origin}${base}/reset-password/`,
+      });
+      if (resetError) throw resetError;
+      setSent(true);
     } catch (caught) {
-      setError(errorText(caught, "Could not update that password."));
+      setError(errorText(caught, "Could not send the reset link."));
     } finally {
       setPending(false);
     }
@@ -141,57 +117,38 @@ export function LoginForm() {
           <Input
             id="reset-email"
             name="email"
-            type="text"
-            inputMode="email"
+            type="email"
             autoComplete="email"
             autoCapitalize="none"
             spellCheck={false}
-            placeholder="name@daymark.example.com"
+            placeholder="name@email.com"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             className="h-11 rounded-xl bg-card px-3"
           />
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Use the email on this login, like alex.rivera@daymark.example.com, or the login ID itself.
+            A link to choose a new password goes to the email saved on this login.
           </p>
         </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="new-password">New password</Label>
-          <Input
-            id="new-password"
-            name="newPassword"
-            type={showPassword ? "text" : "password"}
-            autoComplete="new-password"
-            value={nextPassword}
-            onChange={(event) => setNextPassword(event.target.value)}
-            className="h-11 rounded-xl bg-card px-3"
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="confirm-password">Confirm password</Label>
-          <Input
-            id="confirm-password"
-            name="confirmPassword"
-            type={showPassword ? "text" : "password"}
-            autoComplete="new-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className="h-11 rounded-xl bg-card px-3"
-          />
-        </div>
+        {sent ? (
+          <p className="rounded-xl bg-secondary px-3 py-2 text-sm" role="status">
+            The reset link is on its way. Open it, choose a new password, then sign in with your login ID.
+          </p>
+        ) : null}
         {error ? (
           <p className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
             {error}
           </p>
         ) : null}
-        <Button type="submit" className="h-11 rounded-xl text-base" disabled={pending}>
-          {pending ? "Updating…" : "Update password"}
+        <Button type="submit" className="h-11 rounded-xl text-base" disabled={pending || sent}>
+          {pending ? "Sending…" : "Send reset link"}
         </Button>
         <button
           type="button"
           className="text-sm text-muted-foreground"
           onClick={() => {
             setResetting(false);
+            setSent(false);
             setError(null);
           }}
         >
@@ -252,6 +209,7 @@ export function LoginForm() {
         className="text-sm text-primary"
         onClick={() => {
           setResetting(true);
+          setSent(false);
           setError(null);
           setPassword("");
         }}

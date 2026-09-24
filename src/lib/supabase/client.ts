@@ -8,5 +8,10 @@ export function createClient() {
     throw new Error("Supabase URL and publishable key are not set.");
   }
 
-  return createBrowserClient(url, key);
+  return createBrowserClient(url, key, {
+    auth: {
+      flowType: "implicit",
+      detectSessionInUrl: true,
+    },
+  });
 }

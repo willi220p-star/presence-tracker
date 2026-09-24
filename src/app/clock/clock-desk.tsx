@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Camera, Coffee, MapPin } from "lucide-react";
 import { toast } from "sonner";
+import { PunchDayTable } from "@/components/punch-day-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,14 +17,13 @@ import {
   formatClockTime,
   formatDistance,
   formatLongDate,
-  formatTimeOnly,
   type EventType,
   type Profile,
   type Punch,
 } from "@/lib/daymark";
 import { createClient } from "@/lib/supabase/client";
 import type { PunchCard } from "@/lib/punches";
-import { formatDuration, summarize, visiblePunches } from "@/lib/time";
+import { formatDuration, summarize } from "@/lib/time";
 
 type Located = {
   latitude: number;
@@ -227,10 +227,8 @@ export function ClockDesk({
 
     try {
       const where = await currentLocation();
-      if (eventType === "shift_in" || eventType === "shift_out") {
-        const blocked = offSiteMessage(where.latitude, where.longitude);
-        if (blocked) throw new Error(blocked);
-      }
+      const blocked = offSiteMessage(where.latitude, where.longitude);
+      if (blocked) throw new Error(blocked);
       await ensureCamera();
       const photo = await capturePhoto();
       const placeName = await describePlace(where.latitude, where.longitude);
@@ -266,7 +264,6 @@ export function ClockDesk({
   }
 
   const summary = summarize(punches, now.getTime());
-  const timeline = visiblePunches(punches, now);
   const paused = !profile.active;
   const metres = location ? distanceMetres(location.latitude, location.longitude) : null;
   const onSite = metres != null && metres <= WORK_SITE.radiusM;
@@ -290,7 +287,7 @@ export function ClockDesk({
             : metres == null
               ? "Finding your address."
               : onSite
-                ? `You are in the location, about ${formatDistance(metres)} from Regus Australia. Clock in and clock out are open.`
+                ? `You are in the location, about ${formatDistance(metres)} from the Regus office on the first floor. Clock in, clock out, break in, and break out are open.`
                 : awayMessage}
         </p>
         <p className="mt-4 max-w-xl text-base font-medium leading-snug">
@@ -334,11 +331,11 @@ export function ClockDesk({
             <CardContent className="flex flex-col gap-2">
               <p className="text-sm font-medium leading-snug">{place ?? "Reading the full address…"}</p>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Clock in and clock out only work within 200 metres of {WORK_SITE.address}.
+                Clock in, clock out, break in, and break out only work within 200 metres of the Regus office on the first floor, above Service Australia at {WORK_SITE.address}.
               </p>
               {!onSite && metres != null ? (
                 <p className="rounded-2xl bg-destructive/10 px-3 py-2 text-sm text-destructive" role="status">
-                  You are not in the location. Be at Regus Australia, Palmerston.
+                  You are out of the range. Be in the location.
                 </p>
               ) : null}
             </CardContent>
@@ -426,7 +423,7 @@ export function ClockDesk({
 
       <section className="flex flex-col gap-3">
         <div className="flex items-end justify-between gap-3">
-          <h2 className="font-heading text-2xl tracking-tight">Today&apos;s punches</h2>
+          <h2 className="font-heading text-2xl tracking-tight">Punches</h2>
           <Button type="button" variant="ghost" className="h-9" onClick={() => void loadPunches()}>
             Refresh
           </Button>
@@ -437,41 +434,7 @@ export function ClockDesk({
             {loadError}
           </p>
         ) : null}
-        {!loading && timeline.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-sm leading-relaxed text-muted-foreground">
-              No punches yet today. Clock in when you are on site. The photo and location are saved with the time.
-            </CardContent>
-          </Card>
-        ) : null}
-        <ul className="flex flex-col gap-3">
-          {timeline.map((punch) => (
-            <li key={punch.id}>
-              <Card className="bg-card/90">
-                <CardContent className="flex gap-4">
-                  {punch.photoUrl ? (
-                    // Signed photo URLs expire and are not a stable remote image host.
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={punch.photoUrl}
-                      alt=""
-                      className="size-20 shrink-0 rounded-xl object-cover"
-                    />
-                  ) : (
-                    <div className="grid size-20 shrink-0 place-items-center rounded-xl bg-muted text-xs text-muted-foreground">
-                      Photo
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="font-medium">{EVENT_LABEL[punch.event_type]}</p>
-                    <p className="text-sm text-muted-foreground">{formatTimeOnly(punch.occurred_at)}</p>
-                    <p className="mt-1 text-sm">{punch.place_name ?? "Place not recorded"}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </li>
-          ))}
-        </ul>
+        {loading ? null : <PunchDayTable punches={punches} />}
       </section>
     </div>
   );

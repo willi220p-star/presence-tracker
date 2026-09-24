@@ -26,8 +26,8 @@ export type Punch = {
 };
 
 export const WORK_SITE = {
-  name: "Regus Australia, Palmerston",
-  address: "Regus Australia, 1 Palmerston Circuit, Palmerston NT 0830",
+  name: "Regus, first floor",
+  address: "Regus, first floor, 1 Palmerston Circuit, Palmerston City, Palmerston NT 0830",
   latitude: -12.4785082,
   longitude: 130.9854825,
   radiusM: 200,
@@ -86,10 +86,8 @@ type PhotonProperties = {
 };
 
 export async function describePlace(latitude: number, longitude: number) {
-  const onSite = distanceMetres(latitude, longitude) <= WORK_SITE.radiusM;
-  const lookedUp = await lookupAddress(latitude, longitude);
-  if (onSite) return WORK_SITE.address;
-  return lookedUp;
+  if (distanceMetres(latitude, longitude) <= WORK_SITE.radiusM) return WORK_SITE.address;
+  return lookupAddress(latitude, longitude);
 }
 
 async function lookupAddress(latitude: number, longitude: number) {
@@ -139,7 +137,7 @@ function formatPhoton(properties: PhotonProperties | undefined) {
 export function offSiteMessage(latitude: number, longitude: number) {
   const metres = distanceMetres(latitude, longitude);
   if (metres <= WORK_SITE.radiusM) return null;
-  return `You are not in the location. Be at Regus Australia, 1 Palmerston Circuit, Palmerston. You are about ${formatDistance(metres)} away.`;
+  return `You are out of the range. Be in the location. You are about ${formatDistance(metres)} away.`;
 }
 
 export function formatClockTime(date: Date) {
